@@ -1,0 +1,65 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: xh-gpu-test-
+  namespace: eidf029ns
+  labels:
+    eidf/user: s2522871-infk8s
+    kueue.x-k8s.io/queue-name: eidf029ns-user-queue
+    kueue.x-k8s.io/max-exec-time-seconds: "900"
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        eidf/user: s2522871-infk8s
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        eidf029_node: "true"
+        profiling_node: "false"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: nvidia.com/gpu.product
+                    operator: In
+                    values:
+                      - NVIDIA-A100-SXM4-40GB
+                      - NVIDIA-A100-SXM4-80GB
+      tolerations:
+        - key: eidf029
+          operator: Equal
+          value: "True"
+          effect: NoSchedule
+      containers:
+        - name: gpu-test
+          image: ghcr.io/REPLACE_WITH_YOUR_GITHUB_USERNAME/eidf-llm-dev:cuda12.8-v1
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              echo 'GPU research pod ready'
+              nvidia-smi -L
+              nvidia-smi topo -m
+              cd /workspace
+              sleep 780
+          resources:
+            requests:
+              cpu: "4"
+              memory: 16Gi
+              nvidia.com/gpu: "2"
+            limits:
+              cpu: "4"
+              memory: 16Gi
+              nvidia.com/gpu: "2"
+          volumeMounts:
+            - name: research-storage
+              mountPath: /workspace
+      volumes:
+        - name: research-storage
+          persistentVolumeClaim:
+            claimName: xh-gpu-research
