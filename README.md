@@ -1,60 +1,73 @@
-# EIDF shared CPU/GPU research image (experimental)
+# EIDF CUDA 13.0 shared development image
 
-## Compatibility first
-EIDF A100 pods previously reported NVIDIA driver **570.124.06**, which fits CUDA 12.8 but not the normal CUDA 13 minimum driver of 580. SGLang **0.5.20** upstream currently uses CUDA 13, whereas its **0.5.19** release was the last officially maintained CUDA-12 lane. This Dockerfile **attempts** CUDA 12.8 + Python 3.12 + PyTorch 2.10.0 + SGLang 0.5.20 + kvcached 0.1.6. Installation/runtime compatibility is **unverified**. Treat any image build failure or GPU kernel failure as a real blocker; do not weaken the cluster's driver isolation to work around it. Check which kernel wheels and dependencies work on your EIDF A100 nodes before relying on the stack.
+Use the **same custom CUDA image** for CPU-only editing and GPU experiments, mounting
+`xh-gpu-research` at `/workspace` in both jobs.
 
-## Files
-- `Dockerfile`: image, Python/Conda, tools, pinned packages.
-- `dev-job.yaml`: CPU-only Kueue Job; same image and `xh-gpu-research` PVC.
-- `gpu-job.yaml`: 2x A100 Job; same image and PVC.
-- `.github/workflows/build.yml`: builds image from GitHub Actions and pushes to GHCR.
+## Versions
+- Base: `nvidia/cuda:13.0.2-devel-ubuntu24.04` (linux/amd64)
+- Python 3.12 (Miniforge), Vim, Git, GCC/G++, CMake, NVCC
+- PyTorch 2.13.0 (CUDA 13.0) and torchvision 0.28.0
+- SGLang 0.5.20
+- kvcached 0.1.6
+- Additional: IPython, pytest, psutil, pandas
 
-## Build without consuming EIDF GPUs
-1. Create your own GitHub repository (e.g. `eidf-llm-image`), commit this entire directory, and push it.
-2. GitHub Actions > **Build and publish EIDF image** > **Run workflow**, or trigger with a push to Dockerfile.
-3. Confirm the workflow has completed successfully. The Python / CUDA dependency resolver can fail; success is NOT guaranteed.
-4. Make the resulting GHCR package public (GitHub package settings), or arrange an EIDF imagePullSecret for a private package.
-5. In **both** `dev-job.yaml` and `gpu-job.yaml`, replace `REPLACE_WITH_YOUR_GITHUB_USERNAME` with your GitHub account/org name (lowercase in GHCR paths).
+## Build and publish (no Docker required locally)
 
-Alternative: build and push with Docker Buildx on a trusted Linux amd64 host:
+Commit all project files to a GitHub repository under `xuehengwang` and trigger
+**Actions → Build and publish EIDF image**. GitHub Actions builds linux/amd64 and
+publishes:
 
-    docker buildx build --platform linux/amd64 \
-      -t ghcr.io/USERNAME/eidf-llm-dev:cuda12.8-v1 \
-      --push .
+`ghcr.io/xuehengwang/eidf-llm-dev:cuda13.0-v1`
 
-## Deploy using eidf029-host26
+Ensure the GHCR package is publicly pullable, or configure Kubernetes
+`imagePullSecrets` for EIDF. The workflow makes the GHCR owner lowercase.
 
-    kubectl get pvc xh-gpu-research -n eidf029ns
-    kubectl create -f dev-job.yaml -n eidf029ns
-    kubectl get jobs -n eidf029ns -l eidf/user=s2522871-infk8s
-    kubectl get pods -n eidf029ns | grep xh-dev
-    kubectl exec -it POD_NAME -n eidf029ns -- bash
+The build performs pip dependency and metadata version checks. It does **not**
+prove that SGLang kernels, kvcached, or GPU execution work on EIDF.
 
-Inside the dev pod:
+## Start CPU-only development Job
 
-    which python; python -V
-    conda --version
-    python -c 'import torch,sglang,kvcached; print(torch.__version__, torch.version.cuda)'
-    cd /workspace
+```bash
+kubectl create -n eidf029ns -f dev-job.yaml
+kubectl get pods -n eidf029ns | grep xh-dev
+kubectl exec -it -n eidf029ns <DEV_POD_NAME> -- bash
+cd /workspace
+python --version
+```
 
-When you need GPUs:
+## Start GPU Job
 
-    kubectl create -f gpu-job.yaml -n eidf029ns
-    kubectl get pods -n eidf029ns | grep xh-gpu-test
-    kubectl exec -it POD_NAME -n eidf029ns -- bash
+```bash
+kubectl create -n eidf029ns -f gpu-job.yaml
+kubectl get pods -n eidf029ns | grep xh-gpu-test
+kubectl exec -it -n eidf029ns <GPU_POD_NAME> -- bash
+nvidia-smi
+python -c 'import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())'
+```
 
-Inside GPU pod, verify the driver and imports BEFORE running a server:
+EIDF worker previously reported NVIDIA driver 570.124.06, which is too old
+for regular CUDA 13.0 execution; NVIDIA typically requires an R580+ driver
+for CUDA 13.0. The image can be built and used for CPU development without
+GPU allocation; GPU jobs may fail until a compatible driver is available.
 
-    nvidia-smi
-    python -c 'import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))'
-    python -m pip check
+## Extending the image
 
-By default, kvcached autpatching is DISABLED until GPU runtime checks pass. Enable for a specific experiment:
+Add further `RUN python -m pip install ...` steps near the end of the Dockerfile,
+then tag a new version (e.g. `cuda13.0-v2`) and update both Job manifests.
+Do not install packages only into the running container if you want them to
+appear in future pods. Source code, results, and any files stored in the
+mounted `/workspace` PVC persist independently of the image.
 
-    export ENABLE_KVCACHED=true KVCACHED_AUTOPATCH=1
+## EIDF scheduling
 
-## Extending later
-Edit Dockerfile, build a **new tag** (e.g. cuda12.8-v2), update both YAMLs. Rebuilding the image avoids environment drift. Never store Hugging Face tokens or GHCR passwords in YAML or Dockerfile. Use authorised Kubernetes secrets instead.
+The jobs use Kueue and a 900-second active execution deadline. You may have
+to wait for admission. Both jobs request CPU and RAM; only `gpu-job.yaml`
+requests 2× A100 GPUs. Delete finished/expired Jobs to avoid clutter.
 
-## Alternative if GPU kernels fail
-Ask EIDF which supported driver is deployed on GPU nodes and whether an R580+ driver is available. If not, use SGLang 0.5.19 on a verified CUDA-12 stack, but note this would NOT meet the requested exact SGLang version; consult the kvcached compatibility matrix before downgrading.
+## Notes
+
+- Verify exact A100 node product labels in your cluster.
+- kvcached automatic patching is disabled by default (`ENABLE_KVCACHED=false`,
+  `KVCACHED_AUTOPATCH=0`); enable only when you deliberately test it.
+- This is an **untested build recipe**. GitHub-hosted runners may run out of
+  disk space when resolving the large ML dependency stack.

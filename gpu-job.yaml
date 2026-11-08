@@ -37,7 +37,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: gpu-test
-          image: ghcr.io/REPLACE_WITH_YOUR_GITHUB_USERNAME/eidf-llm-dev:cuda12.8-v1
+          image: ghcr.io/xuehengwang/eidf-llm-dev:cuda13.0-v1
           imagePullPolicy: Always
           command: ["/bin/bash", "-lc"]
           args:
