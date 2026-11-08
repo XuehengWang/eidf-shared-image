@@ -37,11 +37,6 @@ RUN python -m pip install \
 # Install the pinned SGLang release. The resolver must retain torch==2.13.0.
 RUN python -m pip install "sglang==0.5.20"
 
-# Ensure CUDA 13 kernels are sourced from SGLang's CUDA 13 index.
-# --no-deps prevents kernel-index resolution from changing PyTorch.
-RUN python -m pip install --upgrade --no-deps sglang-kernel \
-    --index-url https://docs.sglang.ai/whl/cu130/
-
 # kvcached builds with the installed PyTorch headers. Compiler/linker stubs
 # are available in the devel image, but GPU runtime execution needs a driver.
 RUN LIBRARY_PATH=/usr/local/cuda/lib64/stubs:${LIBRARY_PATH} \
