@@ -6,7 +6,6 @@ on:
   push:
     paths:
       - Dockerfile.sglang049
-      - kvcached-patched/**
       - .github/workflows/build-sglang049.yml
 
 jobs:
