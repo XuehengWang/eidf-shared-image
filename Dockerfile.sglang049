@@ -6,52 +6,74 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     CUDA_HOME=/usr/local/cuda \
     MAX_JOBS=4 \
-    ENABLE_KVCACHED=true \
-    KVCACHED_AUTOPATCH=1
+    ENABLE_KVCACHED=false \
+    KVCACHED_AUTOPATCH=0
 
-# Build tools for kvcached CUDA/C++ extensions.
+# Build tools
 RUN apt-get update && apt-get install -y \
     --no-install-recommends \
-    git vim nano tmux htop \
+    git curl vim nano tmux htop \
     build-essential cmake ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
-# Existing SGLang environment and development tools.
+# Verify existing SGLang/PyTorch environment
+RUN python3 - <<'PY'
+import sys
+import torch
+import sglang
+
+print("Python:", sys.version)
+print("PyTorch:", torch.__version__)
+print("CUDA:", torch.version.cuda)
+print("SGLang:", sglang.__version__)
+
+assert sys.version_info[:2] == (3, 10)
+assert torch.__version__.startswith("2.7.1")
+PY
+
+# Check the CUDA development toolchain
+RUN command -v nvcc && nvcc --version
+
+# Development and kvcached dependencies.
+# Avoid changing the existing PyTorch installation.
 RUN python3 -m pip install \
-    ipython pytest psutil pandas
+    ipython pytest psutil pandas \
+    setuptools wheel ninja \
+    "posix_ipc>=1.0" "wrapt>=1.15"
 
-# Verify the existing runtime and CUDA compiler.
-RUN python3 -c "import torch, sglang; \
-    print('Torch:', torch.__version__); \
-    print('CUDA:', torch.version.cuda); \
-    print('SGLang:', sglang.__version__)" \
-    && nvcc --version
+# Download kvcached source at image build time
+ARG KVCACHED_REF=v0.1.5
 
-# Add your patched kvcached 0.1.5 source.
-COPY kvcached-patched/ /opt/kvcached-src/
+RUN git clone \
+    https://github.com/ovg-project/kvcached.git \
+    /opt/kvcached-src \
+    && cd /opt/kvcached-src \
+    && git checkout "${KVCACHED_REF}" \
+    && git rev-parse HEAD
 
-# Install required build/runtime dependencies without
-# changing the existing torch and sglang packages.
-RUN python3 -m pip install \
-    ninja setuptools wheel posix_ipc wrapt
-
-# Build kvcached against Python 3.10 and torch 2.7.1.
+# Compile and install for the container's Python 3.10
+# and existing PyTorch 2.7.1+cu126
 RUN cd /opt/kvcached-src && \
     python3 -m pip install . \
       --no-build-isolation \
-      --no-cache-dir \
-      --no-deps
+      --no-deps \
+      --no-cache-dir
 
-# Install the automatic patch startup hook.
+# Install the Python startup patch hook
 RUN cd /opt/kvcached-src && \
     python3 tools/dev_copy_pth.py
 
-# Verify installation and native extension.
+# Verify the package and compiled native extension
 RUN python3 -m pip show kvcached && \
-    python3 -c "import kvcached; import kvcached.vmm_ops; print('kvcached installed')"
+    python3 -c "import kvcached.vmm_ops; print('kvcached extension OK')" && \
+    test -f "$(python3 -c 'import site; print(site.getsitepackages()[0])')/kvcached_autopatch.pth"
 
-# Keep the upstream dependency diagnostics non-fatal.
+# Existing base image may have unrelated pip metadata issues
 RUN python3 -m pip check || true
+
+# Enable kvcached for newly started containers
+ENV ENABLE_KVCACHED=true \
+    KVCACHED_AUTOPATCH=1
 
 WORKDIR /workspace
 
