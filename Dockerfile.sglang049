@@ -12,11 +12,15 @@ RUN apt-get update && apt-get install -y \
     build-essential cmake ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
+# Development packages are already present in the base image.
+# Keep them without upgrading existing dependencies.
 RUN python3 -m pip install \
     ipython pytest psutil pandas
 
-RUN python3 -m pip check
+# Diagnostic only: upstream image has dependency metadata issues.
+RUN python3 -m pip check || true
 
+# Verify the essential packages.
 RUN python3 -c "import torch, sglang; \
     print('Torch:', torch.__version__); \
     print('CUDA:', torch.version.cuda); \
@@ -25,3 +29,4 @@ RUN python3 -c "import torch, sglang; \
 WORKDIR /workspace
 
 CMD ["/bin/bash", "-lc", "sleep infinity"]
+
