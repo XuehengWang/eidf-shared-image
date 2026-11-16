@@ -1,41 +1,26 @@
 
-FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
+FROM lmsysorg/sglang:v0.4.9.post2-cu126
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     ENABLE_KVCACHED=false \
     KVCACHED_AUTOPATCH=0
 
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-dev \
-    git \
-    curl \
-    wget \
-    vim \
-    tmux \
-    htop \
-    build-essential \
-    cmake \
-    ninja-build \
+    --no-install-recommends \
+    git vim nano tmux htop \
+    build-essential cmake ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python3 -m pip install --upgrade pip setuptools wheel
-
-# Install SGLang 0.4.9
-RUN python3 -m pip install "sglang[all]==0.4.9"
-
-# Development utilities
 RUN python3 -m pip install \
-    ipython \
-    pytest \
-    psutil \
-    pandas
+    ipython pytest psutil pandas
 
-# Check installed dependencies
 RUN python3 -m pip check
+
+RUN python3 -c "import torch, sglang; \
+    print('Torch:', torch.__version__); \
+    print('CUDA:', torch.version.cuda); \
+    print('SGLang:', sglang.__version__)"
 
 WORKDIR /workspace
 
