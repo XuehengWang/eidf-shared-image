@@ -63,10 +63,36 @@ RUN cd /opt/kvcached-src && \
 RUN cd /opt/kvcached-src && \
     python3 tools/dev_copy_pth.py
 
-# Verify the package and compiled native extension
+# Verify kvcached installation without loading the NVIDIA driver.
+# libcuda.so.1 is only available at runtime on GPU nodes.
+
 RUN python3 -m pip show kvcached && \
-    python3 -c "import kvcached.vmm_ops; print('kvcached extension OK')" && \
-    test -f "$(python3 -c 'import site; print(site.getsitepackages()[0])')/kvcached_autopatch.pth"
+    python3 - <<'PY'
+import importlib.metadata
+import importlib.util
+import pathlib
+import site
+
+version = importlib.metadata.version("kvcached")
+assert version == "0.1.5", version
+
+# Verify native extension exists without importing it.
+spec = importlib.util.find_spec("kvcached.vmm_ops")
+assert spec is not None, "kvcached.vmm_ops not found"
+assert spec.origin is not None, "Native extension path missing"
+assert pathlib.Path(spec.origin).is_file()
+assert spec.origin.endswith(".so"), spec.origin
+print("Native extension found:", spec.origin)
+
+# Verify startup hook exists.
+hooks = [
+    pathlib.Path(p) / "kvcached_autopatch.pth"
+    for p in site.getsitepackages()
+]
+assert any(p.exists() for p in hooks), "Autopatch hook missing"
+print("kvcached startup hook found")
+print("Build-time verification passed")
+PY
 
 # Existing base image may have unrelated pip metadata issues
 RUN python3 -m pip check || true
