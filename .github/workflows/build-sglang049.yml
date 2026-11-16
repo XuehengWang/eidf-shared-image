@@ -6,6 +6,7 @@ on:
   push:
     paths:
       - Dockerfile.sglang049
+      - kvcached-patched/**
       - .github/workflows/build-sglang049.yml
 
 jobs:
@@ -39,4 +40,4 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ steps.image.outputs.name }}:sglang0.4.9-base
+            ${{ steps.image.outputs.name }}:sglang0.4.9-kvcached0.1.5
