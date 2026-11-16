@@ -1,0 +1,31 @@
+
+# Experimental legacy SGLang image.
+# Verify that the upstream v0.4.9 tag is still available.
+FROM lmsysorg/sglang:v0.4.9
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    ENABLE_KVCACHED=false \
+    KVCACHED_AUTOPATCH=0
+
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
+    git vim nano tmux htop \
+    build-essential cmake ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install \
+    ipython pytest psutil pandas
+
+# Install kvcached separately after verifying compatibility.
+# Current kvcached 0.1.6 requires torch >= 2.10 and
+# does not officially support SGLang 0.4.9.
+#
+# RUN python3 -m pip install \
+#     "kvcached==0.1.6" --no-build-isolation
+
+RUN python3 -m pip check
+
+WORKDIR /workspace
+
+CMD ["/bin/bash", "-lc", "sleep infinity"]
